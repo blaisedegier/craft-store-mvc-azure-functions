@@ -1,10 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using System.Linq;
-using System.Net.Http;
 using System.Net.Mail;
-using System.Threading.Tasks;
 using ServerlessFunc.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
@@ -13,11 +9,26 @@ namespace ServerlessFunc.Controllers
 {
     public class MyWorkController : Controller
     {
+        /*
+         * Code Attribution
+         * Dependency injection in ASP.NET Core
+         * Rick-Anderson
+         * learn.microsoft.com
+         * https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-7.0
+         */
         private readonly CraftMarketContext _context;
+        /*
+         * Code Attribution
+         * Make HTTP requests using IHttpClientFactory in ASP.NET Core
+         * stevejgordon
+         * learn.microsoft.com
+         * https://learn.microsoft.com/en-us/aspnet/core/fundamentals/http-requests?view=aspnetcore-7.0
+         */
         private readonly IHttpClientFactory _clientFactory;
         private readonly string _functionAppBaseUrl;
         private readonly UserManager<IdentityUser> _userManager;
 
+        // Constructor for dependency injection
         public MyWorkController(CraftMarketContext context, IHttpClientFactory clientFactory, IConfiguration configuration, UserManager<IdentityUser> userManager)
         {
             _context = context;
@@ -26,16 +37,39 @@ namespace ServerlessFunc.Controllers
             _userManager = userManager;
         }
 
+        /*
+         * Code Attribution
+         * EntityFrameworkQueryableExtensions.Include Method (Microsoft.EntityFrameworkCore)
+         * dotnet-bot
+         * learn.microsoft.com
+         * https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.include?view=efcore-7.0
+         */
+        // Displays the list of products
         public IActionResult Index()
         {
             var data = _context.Products.Include(p => p.Category).ToList();
             return View(data);
         }
 
+        /*
+         * Code Attribution
+         * HttpPostAttribute Class (Microsoft.AspNetCore.Mvc)
+         * dotnet-bot
+         * learn.microsoft.com
+         * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.httppostattribute?view=aspnetcore-7.0
+         */
+        // Processes product orders
         [HttpPost]
         [Authorize]
         public async Task<IActionResult> OrderProduct(int productId)
         {
+            /*
+             * Code Attribution
+             * UserManager Class (Microsoft.AspNetCore.Identity)
+             * dotnet-bot
+             * learn.microsoft.com
+             * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.identity.usermanager-1?view=aspnetcore-7.0
+             */
             var user = await _userManager.GetUserAsync(User);
             var userId = user?.Id;
             var userEmail = user?.Email;
@@ -61,8 +95,16 @@ namespace ServerlessFunc.Controllers
             return View("OrderConfirmation");
         }
 
+        // Sends a confirmation email for the order
         public async Task<IActionResult> SendConfirmationEmail(string toEmail, int orderId)
         {
+            /*
+             * Code Attribution
+             * SmtpClient Class (System.Net.Mail)
+             * karelz
+             * learn.microsoft.com
+             * https://learn.microsoft.com/en-us/dotnet/api/system.net.mail.smtpclient?view=net-7.0
+             */
             try
             {
                 var smtpClient = new SmtpClient("smtp.gmail.com")
@@ -72,6 +114,13 @@ namespace ServerlessFunc.Controllers
                     EnableSsl = true,
                 };
 
+                /*
+                 * Code Attribution
+                 * IUrlHelper.Action(UrlActionContext) Method (Microsoft.AspNetCore.Mvc)
+                 * dotnet-bot
+                 * learn.microsoft.com
+                 * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.iurlhelper.action?view=aspnetcore-7.0
+                 */
                 var confirmationLink = Url.Action("ConfirmOrderAndPayment", "MyWork", new { orderId }, Request.Scheme);
 
                 var mailMessage = new MailMessage
@@ -96,6 +145,7 @@ namespace ServerlessFunc.Controllers
             }
         }
 
+        // Confirms the order and payment
         public IActionResult ConfirmOrderAndPayment(int orderId)
         {
             var order = GetOrderById(orderId);
@@ -106,6 +156,7 @@ namespace ServerlessFunc.Controllers
             return View(order);
         }
 
+        // Confirms the order via external API
         [HttpPost]
         public async Task<IActionResult> ConfirmOrder(int orderId)
         {
@@ -119,6 +170,7 @@ namespace ServerlessFunc.Controllers
             return BadRequest("Failed to confirm order.");
         }
 
+        // Confirms the payment via external API
         [HttpPost]
         public async Task<IActionResult> ConfirmPayment(int orderId)
         {
@@ -132,6 +184,7 @@ namespace ServerlessFunc.Controllers
             return BadRequest("Failed to confirm payment.");
         }
 
+        // Retrieves an order by its ID
         private Order? GetOrderById(int orderId)
         {
             return _context.Orders
