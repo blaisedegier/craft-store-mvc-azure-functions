@@ -2,7 +2,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
-using System.Threading.Tasks;
 
 namespace OrderProcessing
 {
