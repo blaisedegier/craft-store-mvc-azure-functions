@@ -1,0 +1,43 @@
+﻿@model List<ServerlessFunc.Models.Product>
+
+@{
+    ViewData["Title"] = "My Work";
+}
+<h1 class="display-4">@ViewData["Title"]</h1>
+
+@* Code Attribution
+Bootstrap Cards
+https://getbootstrap.com/docs/5.3/components/card/ *@
+<div class="row">
+    @foreach (var product in Model)
+    {
+        <div class="col-md-4">
+            <div class="card" style="width: 22rem;">
+                <img src="@Url.Content(product.Image)" class="card-img-top product-image" alt="@product.Name">
+                <div class="card-body">
+                    <h5 class="card-title">@product.Name</h5>
+                    <p class="card-text">@($"R{product.Price}")</p>
+                    <p class="card-text">@product.Availability</p>
+                    <p class="card-text">Category: @product.Category.Name</p>
+                    <p class="card-text">@product.Category.Description</p>
+
+                    <div class="dropdown">
+                        <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton@product.ProductId" data-bs-toggle="dropdown" aria-expanded="false">
+                            Product Description
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton@product.ProductId">
+                            <li><a class="dropdown-item text-wrap">@product.Description</a></li>
+                        </ul>
+                    </div>
+
+                    <p>
+                        <form method="post" action="/MyWork/OrderProduct">
+                            <input type="hidden" name="productId" value="@product.ProductId" />
+                            <button type="submit" class="btn btn-primary">Order</button>
+                        </form>
+                    </p>
+                </div>
+            </div>
+        </div>
+    }
+</div>

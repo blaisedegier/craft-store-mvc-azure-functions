@@ -1,0 +1,22 @@
+﻿@model ServerlessFunc.Models.Order
+
+@{
+    ViewData["Title"] = "Confirm Order and Payment";
+}
+
+<h1>@ViewData["Title"]</h1>
+
+<div>
+    <h2>Order Details</h2>
+    <p>Order ID: @Model.OrderId</p>
+    <p>Product ID: @Model.ProductId</p>
+    <p>User ID: @Model.UserId</p>
+
+    <form method="post" asp-action="ConfirmOrder" asp-route-orderId="@Model.OrderId">
+        <button type="submit" class="btn btn-success">Confirm Order</button>
+    </form>
+
+    <form method="post" asp-action="ConfirmPayment" asp-route-orderId="@Model.OrderId">
+        <button type="submit" class="btn btn-primary">Confirm Payment</button>
+    </form>
+</div>

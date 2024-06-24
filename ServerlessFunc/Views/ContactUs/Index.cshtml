@@ -1,0 +1,42 @@
+﻿@model ServerlessFunc.Models.ContactUs
+
+@{
+    ViewData["Title"] = "Contact Us";
+}
+
+<h1 class="display-4">@ViewData["Title"]</h1>
+@* Code Attribution
+ * Bipin Paul
+ * CodeProject
+ * How to Implement Contact Us Page in ASP.NET MVC (ASP.NET 5 )
+ * 28 February 2016
+ * https://www.codeproject.com/tips/1081578/how-to-implement-contact-us-page-in-asp-net-mvc-as
+ *@
+<form asp-action="Index" method="post" class="form-horizontal">
+    <div class="form-group">
+        <label asp-for="FirstName" class="control-label">First Name</label>
+        <input asp-for="FirstName" class="form-control" />
+        <span asp-validation-for="FirstName" class="text-danger"></span>
+    </div>
+    <div class="form-group">
+        <label asp-for="LastName" class="control-label">Last Name</label>
+        <input asp-for="LastName" class="form-control" />
+        <span asp-validation-for="LastName" class="text-danger"></span>
+    </div>
+    <div class="form-group">
+        <label asp-for="Email" class="control-label"></label>
+        <input asp-for="Email" class="form-control" />
+        <span asp-validation-for="Email" class="text-danger"></span>
+    </div>
+    <div class="form-group">
+        <label asp-for="CellNumber" class="control-label">Cellphone Number</label>
+        <input asp-for="CellNumber" class="form-control" />
+        <span asp-validation-for="CellNumber" class="text-danger"></span>
+    </div>
+    <button type="submit" class="btn btn-primary">Send</button>
+</form>
+
+@if (ViewBag.Message != null)
+{
+    <div class="alert alert-info">@ViewBag.Message</div>
+}

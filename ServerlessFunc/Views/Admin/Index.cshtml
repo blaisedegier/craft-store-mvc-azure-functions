@@ -1,0 +1,38 @@
+﻿@model List<ServerlessFunc.Models.Order>
+
+@{
+    ViewData["Title"] = "Admin - Order and Payment Status";
+}
+
+<h1>@ViewData["Title"]</h1>
+
+@if (!Model.Any())
+{
+    <p>No orders found.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Order ID</th>
+                <th>Product Name</th>
+                <th>User Email</th>
+                <th>Order Status</th>
+                <th>Payment Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var order in Model)
+            {
+                <tr>
+                    <td>@order.OrderId</td>
+                    <td>@order.Product?.Name</td>
+                    <td>@order.User?.UserName</td>
+                    <td>@order.OrderStatus</td>
+                    <td>@order.PaymentStatus</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
