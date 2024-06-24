@@ -5,6 +5,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UserSecretsId>aspnet-ServerlessFunc-b50b9692-125f-45b9-9af1-66369ba2f43e</UserSecretsId>
+		<PlatformTarget>x64</PlatformTarget>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -71,4 +72,8 @@
 		</PackageReference>
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 	</ItemGroup>
+
+	<PropertyGroup>
+		<OutputPath>bin\Release\net8.0\win-x64\</OutputPath>
+	</PropertyGroup>
 </Project>

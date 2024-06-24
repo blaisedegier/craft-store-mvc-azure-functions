@@ -1,15 +1,14 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
-using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using ServerlessFunc.Models;
 
 namespace OrderProcessing
 {
+    // PaymentProcessingFunction class contains the ConfirmPayment function, which confirms payment for an order.
     public static class PaymentProcessingFunction
     {
+        // Creates and configures a new DbContext for database operations, similar to OrderConfirmationFunction.
         private static CraftMarketContext CreateDbContext()
         {
             var optionsBuilder = new DbContextOptionsBuilder<CraftMarketContext>();
@@ -18,15 +17,18 @@ namespace OrderProcessing
             return new CraftMarketContext(optionsBuilder.Options);
         }
 
+        // HTTP-triggered function to confirm payment for an order.
         [Function("ConfirmPayment")]
         public static async Task<HttpResponseData> ConfirmPayment(
             [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req,
             FunctionContext executionContext)
         {
+            // Initializes logger and parses query string for order ID.
             var logger = executionContext.GetLogger("ConfirmPayment");
             var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
             var orderIdString = query["orderId"];
 
+            // Validates the order ID and returns a bad request response if invalid.
             if (string.IsNullOrEmpty(orderIdString) || !int.TryParse(orderIdString, out int orderId))
             {
                 var badRequestResponse = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
@@ -34,6 +36,7 @@ namespace OrderProcessing
                 return badRequestResponse;
             }
 
+            // Uses DbContext to find and update the payment status in the database.
             using (var context = CreateDbContext())
             {
                 var order = context.Orders.FirstOrDefault(o => o.OrderId == orderId);
@@ -49,6 +52,7 @@ namespace OrderProcessing
                 await context.SaveChangesAsync();
             }
 
+            // Returns an OK response indicating the payment has been confirmed.
             var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
             await response.WriteStringAsync("Payment confirmed.");
             return response;
