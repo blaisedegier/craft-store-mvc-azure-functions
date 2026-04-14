@@ -24,7 +24,7 @@ The solution is composed of two projects that work together:
 
 | Project             | Type                                 | Responsibility                                                                                                       |
 | ------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **ServerlessFunc**           | ASP.NET Core MVC Web App             | Product catalog, user authentication (Identity), order placement, email notifications, admin dashboard               |
+| **ServerlessFunc**  | ASP.NET Core MVC Web App             | Product catalog, user authentication (Identity), order placement, email notifications, admin dashboard               |
 | **OrderProcessing** | Azure Functions v4 (Isolated Worker) | Serverless HTTP APIs for order/payment confirmation, Durable Functions orchestrator for long-running order workflows |
 
 **Flow:**
@@ -68,9 +68,9 @@ Browser ──► ServerlessFunc (MVC) ──► Places order & sends confirmati
 
 ```text
 EF-ServerlessFunc/
-├── ServerlessFunc.sln                          # Visual Studio solution
+├── ServerlessFunc.sln                 # Visual Studio solution
 │
-├── ServerlessFunc/                             # ASP.NET Core MVC Web Application
+├── ServerlessFunc/                    # ASP.NET Core MVC Web Application
 │   ├── Program.cs                     # App startup, DI, Identity, seed data
 │   ├── Controllers/
 │   │   ├── HomeController.cs          # Landing page & product listing
@@ -214,8 +214,8 @@ On first startup the app creates a default admin user:
 
 The application uses **two EF Core contexts** against the same SQL Server database:
 
-| Context                | Purpose                                          | Migrations Path          |
-| ---------------------- | ------------------------------------------------ | ------------------------ |
+| Context                | Purpose                                          | Migrations Path                   |
+| ---------------------- | ------------------------------------------------ | --------------------------------- |
 | `ApplicationDbContext` | ASP.NET Core Identity (users, roles, claims)     | `ServerlessFunc/Data/Migrations/` |
 | `CraftMarketContext`  | Business entities (Products, Categories, Orders) | `ServerlessFunc/Migrations/`      |
 
@@ -305,8 +305,8 @@ The `OrderProcessingOrchestrator` implements a long-running workflow using Azure
 
 Both projects include Visual Studio **Azure publish profiles** for deployment:
 
-- **ServerlessFunc** → Azure Web App (`ServerlessFunc-WebApp`)
-- **OrderProcessing** → Azure Function App (`OrderProcessing-Function`)
+- **ServerlessFunc** → Azure Web App
+- **OrderProcessing** → Azure Function App
 
 ### Manual deployment
 
