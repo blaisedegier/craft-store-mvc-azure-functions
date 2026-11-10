@@ -1,6 +1,6 @@
 # CraftMarket
 
-An ASP.NET Core 8 MVC store for handcrafted goods whose order confirmation and payment steps run as a Durable Functions orchestration in an Azure Functions app.
+An ASP.NET Core 10 MVC store for handcrafted goods whose order confirmation and payment steps run as a Durable Functions orchestration in an Azure Functions app.
 
 [![CI](https://github.com/blaisedegier/craft-store-mvc-azure-functions/actions/workflows/ci.yml/badge.svg)](https://github.com/blaisedegier/craft-store-mvc-azure-functions/actions/workflows/ci.yml)
 
@@ -22,8 +22,8 @@ The solution has two projects that share one SQL Server database:
 
 | Project | Type | Role |
 | --- | --- | --- |
-| `CraftMarket` | ASP.NET Core 8 MVC | Catalogue, Identity, ordering, the confirmation page, admin orders list |
-| `OrderProcessing` | Azure Functions v4, .NET 8 isolated worker | `ConfirmOrder` and `ConfirmPayment` HTTP functions, the order orchestrator and its activity |
+| `CraftMarket` | ASP.NET Core 10 MVC | Catalogue, Identity, ordering, the confirmation page, admin orders list |
+| `OrderProcessing` | Azure Functions v4, .NET 10 isolated worker | `ConfirmOrder` and `ConfirmPayment` HTTP functions, the order orchestrator and its activity |
 
 ```text
 browser -> CraftMarket: place order       -> Orders row (Pending, Pending) + email with confirmation link
@@ -61,7 +61,7 @@ and `PaymentStatus` (`Pending`, `Confirmed`).
 
 Prerequisites:
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - SQL Server. The default connection string uses LocalDB, `(localdb)\MSSQLLocalDB`, which is installed with
   Visual Studio on Windows; set `ConnectionStrings:DefaultConnection` to use any other server.
 - For the order workflow: [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
@@ -107,7 +107,7 @@ app first so the database exists.
 
 ## Tech
 
-ASP.NET Core 8 MVC, ASP.NET Core Identity, EF Core 8 with SQL Server, Azure Functions v4 (isolated worker),
+ASP.NET Core 10 MVC, ASP.NET Core Identity, EF Core 10 with SQL Server, Azure Functions v4 (isolated worker),
 Durable Functions, Bootstrap 5.
 
 ## Known limitations
