@@ -52,8 +52,12 @@ Decisions worth knowing about:
   app owns the schema through EF Core migrations.
 - **One `DbContext` in the web app.** `CraftMarketContext` derives from `IdentityDbContext`, so the Identity
   tables and the store tables (`Category`, `Product`, `Orders`) come from one migration history, and an
-  order's `UserId` is a foreign key to `AspNetUsers`. Pending migrations are applied at startup before the
-  catalogue is seeded.
+  order's `UserId` is a foreign key to `AspNetUsers`.
+- **Migrating at startup is opt-in outside Development.** When `Database:MigrateOnStartup` is true the web app
+  applies pending migrations before seeding the catalogue, roles and admin account. It defaults to true in
+  the Development environment and false everywhere else, where the schema is expected to be deployed
+  separately (for example with `dotnet ef database update`). If migrating or seeding fails, the error is
+  logged and the app still starts; pages that need the database then fail until it is reachable.
 - **Users can only see and act on their own orders.** The confirmation page and both confirm actions require
   sign-in and look the order up by id and the signed-in user's id together.
 
@@ -88,15 +92,17 @@ dotnet user-secrets set "SeedAdmin:Password" "Choose-a-Passw0rd!" --project Craf
 dotnet run --project CraftMarket/CraftMarket.csproj
 ```
 
-The app listens on <http://localhost:5063>. On first start it creates the `CraftMarket` database, seeds the
-catalogue and the `Admin` and `User` roles, and creates `admin@example.com` (change `SeedAdmin:Email` to use
-another address) with the password you set. Without `SeedAdmin:Password` no admin account is created.
+The app listens on <http://localhost:5063> and runs in the Development environment, so on first start it
+creates the `CraftMarket` database, seeds the catalogue and the `Admin` and `User` roles, and creates
+`admin@example.com` (change `SeedAdmin:Email` to use another address) with the password you set. Without
+`SeedAdmin:Password` no admin account is created.
 
 Settings in `CraftMarket/appsettings.json`; keep anything secret in user secrets or environment variables:
 
 | Setting | Purpose |
 | --- | --- |
 | `ConnectionStrings:DefaultConnection` | SQL Server database (LocalDB by default) |
+| `Database:MigrateOnStartup` | Apply pending migrations at startup. Not set by default, which means true in Development and false elsewhere |
 | `Smtp:Host`, `Smtp:Port`, `Smtp:EnableSsl`, `Smtp:Username`, `Smtp:Password`, `Smtp:From` | Mail server for the confirmation email. When `Smtp:Host` is empty no email is sent and the confirmation link is shown on the order page instead. |
 | `SeedAdmin:Email`, `SeedAdmin:Password` | Admin account created at startup |
 | `FunctionAppBaseUrl` | Base URL of the Functions app (`http://localhost:7235` locally) |

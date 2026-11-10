@@ -6,11 +6,10 @@ namespace CraftMarket.Data
     // Adapted from https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-mvc-app/working-with-sql?view=aspnetcore-8.0&tabs=visual-studio
     public static class SeedData
     {
-        // Applies any pending migrations, then adds the starter categories and products to an empty catalogue.
+        // Adds the starter categories and products to an empty catalogue. The schema must already exist.
         public static void Initialize(IServiceProvider serviceProvider)
         {
             var context = serviceProvider.GetRequiredService<CraftMarketContext>();
-            context.Database.Migrate();
 
             if (context.Products.Any() || context.Categories.Any())
             {
