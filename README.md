@@ -92,6 +92,10 @@ dotnet user-secrets set "SeedAdmin:Password" "Choose-a-Passw0rd!" --project Craf
 dotnet run --project CraftMarket/CraftMarket.csproj
 ```
 
+On Windows, clone into a short path or enable long path support. The Functions SDK builds a generated
+project deep under `OrderProcessing/obj/`, and once a file path there passes 260 characters the build fails
+with `MSB3030: Could not copy the file`.
+
 The app listens on <http://localhost:5063> and runs in the Development environment, so on first start it
 creates the `CraftMarket` database, seeds the catalogue and the `Admin` and `User` roles, and creates
 `admin@example.com` (change `SeedAdmin:Email` to use another address) with the password you set. Without
