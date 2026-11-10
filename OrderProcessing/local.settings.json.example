@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "SqlConnectionString": "Server=(localdb)\MSSQLLocalDB;Database=CraftMarket;Trusted_Connection=True;MultipleActiveResultSets=true"
+  },
+  "Host": {
+    "LocalHttpPort": 7235
+  }
+}

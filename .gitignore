@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Azure Functions local settings (copy OrderProcessing/local.settings.json.example)
+local.settings.json

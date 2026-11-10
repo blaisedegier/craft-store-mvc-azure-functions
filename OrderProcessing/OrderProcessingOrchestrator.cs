@@ -1,112 +1,95 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Net.Http.Json;
+using OrderProcessing.Data;
 
 namespace OrderProcessing
 {
-    // Defines the orchestrator function that processes orders.
+    // One orchestration per order, started by ConfirmOrder. It marks the order confirmed, then waits up to
+    // 24 hours for the PaymentConfirmed event raised by ConfirmPayment. Payment in time completes the
+    // order; otherwise the order expires. Every database write happens in the UpdateOrderStatus activity,
+    // because orchestrator code is replayed and must not perform I/O itself.
+    // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.functions.worker?view=azure-dotnet
     public static class OrderProcessingOrchestrator
     {
-        // Retrieves the base URL for the function app from environment variables.
-        private static readonly string FunctionAppBaseUrl = Environment.GetEnvironmentVariable("FunctionAppBaseUrl") ?? string.Empty;
+        public const string PaymentConfirmedEvent = "PaymentConfirmed";
 
-        /*
-         * Code Attribution
-         * Microsoft.Azure.Functions.Worker Namespace - Azure for .NET Developers
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.functions.worker?view=azure-dotnet
-         */
+        private static readonly TimeSpan PaymentWindow = TimeSpan.FromHours(24);
+
+        // A predictable instance id lets ConfirmPayment find the orchestration from the order id alone.
+        public static string InstanceIdFor(int orderId) => $"order-{orderId}";
+
         [Function(nameof(OrderProcessingOrchestrator))]
-        public static async Task RunOrchestrator(
+        public static async Task<string> RunOrchestrator(
             [OrchestrationTrigger] TaskOrchestrationContext context)
         {
-            /*
-             * Code Attribution
-             * Logging in C# - .NET
-             * IEvangelist
-             * learn.microsoft.com
-             * https://learn.microsoft.com/en-us/dotnet/core/extensions/logging?tabs=command-line
-             */
-            // Creates a logger that is safe to use in replay events within durable functions.
+            // Adapted from https://learn.microsoft.com/en-us/dotnet/core/extensions/logging?tabs=command-line
             ILogger logger = context.CreateReplaySafeLogger(nameof(OrderProcessingOrchestrator));
-            logger.LogInformation("Starting order processing orchestrator.");
-
-            // Retrieves the input for the orchestrator, which is expected to be an order ID.
             var orderId = context.GetInput<int>();
 
-            // Initiates tasks to wait for external events indicating order and payment confirmation.
-            var orderConfirmationTask = context.WaitForExternalEvent<bool>("OrderConfirmed");
-            var paymentConfirmationTask = context.WaitForExternalEvent<bool>("PaymentConfirmed");
+            await context.CallActivityAsync(nameof(OrderStatusActivity.UpdateOrderStatus),
+                new OrderStatusUpdate(orderId, OrderStatuses.Confirmed, null));
+            context.SetCustomStatus("AwaitingPayment");
+            logger.LogInformation("Order {OrderId} confirmed; waiting for payment.", orderId);
 
-            /*
-             * Code Attribution
-             * SystemEvents.CreateTimer(Int32) Method (Microsoft.Win32)
-             * dotnet-bot
-             * learn.microsoft.com
-             * https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.systemevents.createtimer?view=net-8.0
-             */
-            // Creates a timer task that completes after 24 hours, acting as a timeout for the order processing.
-            var timeoutTask = context.CreateTimer(context.CurrentUtcDateTime.AddHours(24), CancellationToken.None);
+            // Adapted from https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.whenany?view=net-7.0
+            using var timeoutCts = new CancellationTokenSource();
+            var paymentTask = context.WaitForExternalEvent<bool>(PaymentConfirmedEvent);
+            var timeoutTask = context.CreateTimer(context.CurrentUtcDateTime.Add(PaymentWindow), timeoutCts.Token);
 
-            /*
-             * Code Attribution
-             * Task.WhenAny Method (System.Threading.Tasks)
-             * dotnet-bot
-             * learn.microsoft.com
-             * https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.whenany?view=net-7.0
-             */
-            // Waits for any of the tasks (order confirmation, payment confirmation, or timeout) to complete.
-            var completedTask = await Task.WhenAny(orderConfirmationTask, paymentConfirmationTask, timeoutTask);
-
-            // Checks which task completed and handles the outcome accordingly.
-            if (completedTask == timeoutTask)
+            if (await Task.WhenAny(paymentTask, timeoutTask) == paymentTask)
             {
-                // If the timeout task completed, logs and handles the timeout scenario.
-                logger.LogInformation("Order processing timed out.");
-                context.SetCustomStatus("Expired");
-                await UpdateOrderStatus(orderId, "Expired");
+                // Cancel the timer so the orchestration can finish instead of waiting for it to fire.
+                timeoutCts.Cancel();
+                await context.CallActivityAsync(nameof(OrderStatusActivity.UpdateOrderStatus),
+                    new OrderStatusUpdate(orderId, OrderStatuses.Completed, OrderStatuses.Confirmed));
+                context.SetCustomStatus(OrderStatuses.Completed);
+                logger.LogInformation("Order {OrderId} paid and completed.", orderId);
+                return OrderStatuses.Completed;
             }
-            else
-            {
-                // If the order is confirmed, logs and updates the order status.
-                if (orderConfirmationTask.IsCompleted)
-                {
-                    logger.LogInformation("Order confirmed.");
-                    context.SetCustomStatus("OrderConfirmed");
-                    await UpdateOrderStatus(orderId, "OrderConfirmed");
-                }
 
-                // If the payment is confirmed, logs and updates the payment status.
-                if (paymentConfirmationTask.IsCompleted)
-                {
-                    logger.LogInformation("Payment confirmed.");
-                    context.SetCustomStatus("PaymentConfirmed");
-                    await UpdateOrderStatus(orderId, "PaymentConfirmed");
-                }
+            await context.CallActivityAsync(nameof(OrderStatusActivity.UpdateOrderStatus),
+                new OrderStatusUpdate(orderId, OrderStatuses.Expired, null));
+            context.SetCustomStatus(OrderStatuses.Expired);
+            logger.LogInformation("Order {OrderId} expired without payment.", orderId);
+            return OrderStatuses.Expired;
+        }
+    }
 
-                // If both order and payment are confirmed, logs and updates the status to completed.
-                if (orderConfirmationTask.IsCompleted && paymentConfirmationTask.IsCompleted)
-                {
-                    logger.LogInformation("Order and payment confirmed.");
-                    context.SetCustomStatus("Completed");
-                    await UpdateOrderStatus(orderId, "Completed");
-                }
-            }
+    // A status change for one order. A null field is left as it is.
+    public record OrderStatusUpdate(int OrderId, string? OrderStatus, string? PaymentStatus);
+
+    public class OrderStatusActivity
+    {
+        private readonly OrdersContext _db;
+        private readonly ILogger<OrderStatusActivity> _logger;
+
+        public OrderStatusActivity(OrdersContext db, ILogger<OrderStatusActivity> logger)
+        {
+            _db = db;
+            _logger = logger;
         }
 
-        /*
-         * Code Attribution
-         * HttpClient Class (System.Net.Http)
-         * karelz
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpclient?view=net-7.0
-         */
-        // Updates the order status by making an HTTP POST request to a specified endpoint.
-        private static async Task UpdateOrderStatus(int orderId, string status)
+        [Function(nameof(UpdateOrderStatus))]
+        public async Task UpdateOrderStatus([ActivityTrigger] OrderStatusUpdate update)
         {
-            var client = new HttpClient();
-            await client.PostAsJsonAsync<object>($"{FunctionAppBaseUrl}/api/UpdateOrderStatus?orderId={orderId}&status={status}", new { });
+            var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderId == update.OrderId);
+            if (order == null)
+            {
+                _logger.LogWarning("Order {OrderId} no longer exists; status not updated.", update.OrderId);
+                return;
+            }
+
+            if (update.OrderStatus != null)
+            {
+                order.OrderStatus = update.OrderStatus;
+            }
+            if (update.PaymentStatus != null)
+            {
+                order.PaymentStatus = update.PaymentStatus;
+            }
+            await _db.SaveChangesAsync();
         }
     }
 }
