@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using CraftMarket.Models;
 using System.Diagnostics;
 
@@ -11,21 +11,15 @@ namespace CraftMarket.Controllers
             return View();
         }
 
-        /*
-         * Code Attribution
-         * Bipin Paul
-         * CodeProject
-         * How to Implement Contact Us Page in ASP.NET MVC (ASP.NET 5 )
-         * 28 February 2016
-         * https://www.codeproject.com/tips/1081578/how-to-implement-contact-us-page-in-asp-net-mvc-as
-         */
+        // Adapted from https://www.codeproject.com/tips/1081578/how-to-implement-contact-us-page-in-asp-net-mvc-as
+        // The form is validated but the message is not stored or forwarded anywhere yet.
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public IActionResult Index(ContactUs contactUs)
         {
             if (ModelState.IsValid)
             {
-                // Save the contactUs object to the database
-                ViewBag.Message = "Message successfully sent.";
+                ViewBag.Message = "Thank you, your message has been received.";
             }
             return View(contactUs);
         }

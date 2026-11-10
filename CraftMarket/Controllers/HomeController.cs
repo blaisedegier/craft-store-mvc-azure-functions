@@ -17,14 +17,7 @@ namespace CraftMarket.Controllers
             _context = context;
         }
 
-        /*
-         * Code Attribution
-         * CascadingMvcDemo
-         * bhrugen
-         * 1 April 2023
-         * GitHub
-         * https://github.com/bhrugen/CascadingMvcDemo
-         */
+        // Adapted from https://github.com/bhrugen/CascadingMvcDemo
         public IActionResult Index()
         {
             var products = _context.Products.Include(p => p.Category).ToList();
