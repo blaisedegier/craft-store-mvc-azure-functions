@@ -1,13 +1,11 @@
-﻿@model List<CraftMarket.Models.Product>
+@model List<CraftMarket.Models.Product>
 
 @{
     ViewData["Title"] = "My Work";
 }
 <h1 class="display-4">@ViewData["Title"]</h1>
 
-@* Code Attribution
-Bootstrap Cards
-https://getbootstrap.com/docs/5.3/components/card/ *@
+@* Adapted from https://getbootstrap.com/docs/5.3/components/card/ *@
 <div class="row">
     @foreach (var product in Model)
     {
@@ -18,8 +16,8 @@ https://getbootstrap.com/docs/5.3/components/card/ *@
                     <h5 class="card-title">@product.Name</h5>
                     <p class="card-text">@($"R{product.Price}")</p>
                     <p class="card-text">@product.Availability</p>
-                    <p class="card-text">Category: @product.Category.Name</p>
-                    <p class="card-text">@product.Category.Description</p>
+                    <p class="card-text">Category: @product.Category?.Name</p>
+                    <p class="card-text">@product.Category?.Description</p>
 
                     <div class="dropdown">
                         <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton@product.ProductId" data-bs-toggle="dropdown" aria-expanded="false">
@@ -31,7 +29,7 @@ https://getbootstrap.com/docs/5.3/components/card/ *@
                     </div>
 
                     <p>
-                        <form method="post" action="/MyWork/OrderProduct">
+                        <form method="post" asp-controller="MyWork" asp-action="OrderProduct">
                             <input type="hidden" name="productId" value="@product.ProductId" />
                             <button type="submit" class="btn btn-primary">Order</button>
                         </form>

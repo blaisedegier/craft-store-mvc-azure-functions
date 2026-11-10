@@ -1,105 +1,92 @@
-using System;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
+using CraftMarket.Data;
+using CraftMarket.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using CraftMarket.Data;
-using CraftMarket.Models;
 
-public class Program
+var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddDbContext<CraftMarketContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<CraftMarketContext>();
+builder.Services.AddControllersWithViews();
+builder.Services.AddHttpClient();
+
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.AddScoped<OrderEmailSender>();
+
+var app = builder.Build();
+
+// Adapted from https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-mvc-app/working-with-sql?view=aspnetcore-8.0&tabs=visual-studio
+using (var scope = app.Services.CreateScope())
 {
-    public static async Task Main(string[] args)
+    SeedData.Initialize(scope.ServiceProvider);
+    await SeedRolesAndAdminAsync(scope.ServiceProvider, app.Configuration, app.Logger);
+}
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseMigrationsEndPoint();
+}
+else
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+app.MapRazorPages();
+
+app.Run();
+
+// Creates the Admin and User roles, and an admin account when SeedAdmin:Password is configured.
+// Adapted from https://youtu.be/Y6DCP-yH-9Q?si=J7dGcI-e5d9UiVHB
+static async Task SeedRolesAndAdminAsync(IServiceProvider services, IConfiguration configuration, ILogger logger)
+{
+    var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+    foreach (var role in new[] { "Admin", "User" })
     {
-        var builder = WebApplication.CreateBuilder(args);
-
-        // Add services to the container.
-        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-        builder.Services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseSqlServer(connectionString));
-        builder.Services.AddDatabaseDeveloperPageExceptionFilter();
-
-        builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
-            .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<ApplicationDbContext>();
-        builder.Services.AddControllersWithViews();
-        builder.Services.AddDbContext<CraftMarketContext>(options => options.UseSqlServer(connectionString));
-        builder.Services.AddHttpClient();
-
-        var app = builder.Build();
-
-        /*
-         * Code Attribution
-         * Part 5, work with a database in an ASP.NET Core MVC app
-         * Microsoft Learn
-         * https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-mvc-app/working-with-sql?view=aspnetcore-8.0&tabs=visual-studio
-         */
-        using (var scope = app.Services.CreateScope())
+        if (!await roleManager.RoleExistsAsync(role))
         {
-            var services = scope.ServiceProvider;
-
-            SeedData.Initialize(services);
+            await roleManager.CreateAsync(new IdentityRole(role));
         }
-
-        // Configure the HTTP request pipeline.
-        if (app.Environment.IsDevelopment())
-        {
-            app.UseMigrationsEndPoint();
-        }
-        else
-        {
-            app.UseExceptionHandler("/Home/Error");
-            // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-            app.UseHsts();
-        }
-
-        app.UseHttpsRedirection();
-        app.UseStaticFiles();
-
-        app.UseRouting();
-
-        app.UseAuthentication();
-        app.UseAuthorization();
-
-        app.MapControllerRoute(
-            name: "default",
-            pattern: "{controller=Home}/{action=Index}/{id?}");
-        app.MapRazorPages();
-
-        /*
-         * Code Attribution
-         * ASP.NET User Roles - Create and Assign Roles for AUTHORIZATION!
-         * tutorialsEU - C#
-         * YouTube
-         * 23 February 2023
-         * https://youtu.be/Y6DCP-yH-9Q?si=J7dGcI-e5d9UiVHB
-         */
-        using (var scope = app.Services.CreateScope())
-        {
-            var RoleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-            var roles = new[] { "Admin", "User" };
-            foreach (var role in roles)
-            {
-                if (!await RoleManager.RoleExistsAsync(role))
-                    await RoleManager.CreateAsync(new IdentityRole(role));
-            }
-        }
-
-        using (var scope = app.Services.CreateScope())
-        {
-            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
-
-            string email = "admin@admin.com";
-            string password = "ChangeMe!123";
-            if (await userManager.FindByEmailAsync(email) == null)
-            {
-                var user = new IdentityUser();
-                user.UserName = email;
-                user.Email = email;
-                await userManager.CreateAsync(user, password);
-                await userManager.AddToRoleAsync(user, "Admin");
-            }
-        }
-
-        app.Run();
     }
+
+    var email = configuration["SeedAdmin:Email"];
+    var password = configuration["SeedAdmin:Password"];
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+    {
+        logger.LogWarning("SeedAdmin:Email or SeedAdmin:Password is not set, so no admin account was created.");
+        return;
+    }
+
+    var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
+    if (await userManager.FindByEmailAsync(email) != null)
+    {
+        return;
+    }
+
+    var admin = new IdentityUser { UserName = email, Email = email };
+    var result = await userManager.CreateAsync(admin, password);
+    if (!result.Succeeded)
+    {
+        logger.LogError("Could not create the admin account: {Errors}",
+            string.Join(" ", result.Errors.Select(e => e.Description)));
+        return;
+    }
+    await userManager.AddToRoleAsync(admin, "Admin");
 }

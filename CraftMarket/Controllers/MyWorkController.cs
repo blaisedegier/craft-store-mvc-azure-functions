@@ -1,154 +1,94 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using System.Net.Mail;
+﻿using CraftMarket.Data;
 using CraftMarket.Models;
-using Microsoft.EntityFrameworkCore;
+using CraftMarket.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace CraftMarket.Controllers
 {
+    // The product catalogue, ordering, and the confirm-order and confirm-payment steps that hand off
+    // to the OrderProcessing Functions app.
     public class MyWorkController : Controller
     {
-        /*
-         * Code Attribution
-         * Dependency injection in ASP.NET Core
-         * Rick-Anderson
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-7.0
-         */
+        // Adapted from https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-7.0
         private readonly CraftMarketContext _context;
-        /*
-         * Code Attribution
-         * Make HTTP requests using IHttpClientFactory in ASP.NET Core
-         * stevejgordon
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/aspnet/core/fundamentals/http-requests?view=aspnetcore-7.0
-         */
+        // Adapted from https://learn.microsoft.com/en-us/aspnet/core/fundamentals/http-requests?view=aspnetcore-7.0
         private readonly IHttpClientFactory _clientFactory;
-        private readonly string _functionAppBaseUrl;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly OrderEmailSender _emailSender;
+        private readonly ILogger<MyWorkController> _logger;
+        private readonly string _functionAppBaseUrl;
+        private readonly string? _functionAppKey;
 
-        // Constructor for dependency injection
-        public MyWorkController(CraftMarketContext context, IHttpClientFactory clientFactory, IConfiguration configuration, UserManager<IdentityUser> userManager)
+        public MyWorkController(
+            CraftMarketContext context,
+            IHttpClientFactory clientFactory,
+            IConfiguration configuration,
+            UserManager<IdentityUser> userManager,
+            OrderEmailSender emailSender,
+            ILogger<MyWorkController> logger)
         {
             _context = context;
             _clientFactory = clientFactory;
-            _functionAppBaseUrl = configuration["FunctionAppBaseUrl"] ?? string.Empty;
             _userManager = userManager;
+            _emailSender = emailSender;
+            _logger = logger;
+            _functionAppBaseUrl = (configuration["FunctionAppBaseUrl"] ?? string.Empty).TrimEnd('/');
+            _functionAppKey = configuration["FunctionAppKey"];
         }
 
-        /*
-         * Code Attribution
-         * EntityFrameworkQueryableExtensions.Include Method (Microsoft.EntityFrameworkCore)
-         * dotnet-bot
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.include?view=efcore-7.0
-         */
-        // Displays the list of products
+        // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.include?view=efcore-7.0
         public IActionResult Index()
         {
             var data = _context.Products.Include(p => p.Category).ToList();
             return View(data);
         }
 
-        /*
-         * Code Attribution
-         * HttpPostAttribute Class (Microsoft.AspNetCore.Mvc)
-         * dotnet-bot
-         * learn.microsoft.com
-         * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.httppostattribute?view=aspnetcore-7.0
-         */
-        // Processes product orders
+        // Creates a pending order for the signed-in user and emails them the confirmation link.
         [HttpPost]
         [Authorize]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> OrderProduct(int productId)
         {
-            /*
-             * Code Attribution
-             * UserManager Class (Microsoft.AspNetCore.Identity)
-             * dotnet-bot
-             * learn.microsoft.com
-             * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.identity.usermanager-1?view=aspnetcore-7.0
-             */
+            // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.identity.usermanager-1?view=aspnetcore-7.0
             var user = await _userManager.GetUserAsync(User);
-            var userId = user?.Id;
-            var userEmail = user?.Email;
-
-            if (userId == null || userEmail == null)
+            if (user?.Email == null)
             {
                 return Challenge();
+            }
+
+            if (!await _context.Products.AnyAsync(p => p.ProductId == productId))
+            {
+                return NotFound();
             }
 
             var order = new Order
             {
                 ProductId = productId,
-                UserId = userId,
-                OrderStatus = "Pending",
-                PaymentStatus = "Pending"
+                UserId = user.Id,
+                OrderStatus = OrderStatuses.Pending,
+                PaymentStatus = OrderStatuses.Pending
             };
 
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            await SendConfirmationEmail(userEmail, order.OrderId);
+            // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.iurlhelper.action?view=aspnetcore-7.0
+            var confirmationLink = Url.Action(nameof(ConfirmOrderAndPayment), "MyWork", new { orderId = order.OrderId }, Request.Scheme)!;
+            var emailSent = await _emailSender.SendOrderConfirmationAsync(user.Email, confirmationLink);
 
+            // Without SMTP configured the link is shown on the page instead, so the flow can be run locally.
+            ViewBag.ConfirmationLink = emailSent ? null : confirmationLink;
             return View("OrderConfirmation");
         }
 
-        // Sends a confirmation email for the order
-        public async Task<IActionResult> SendConfirmationEmail(string toEmail, int orderId)
+        // The page the emailed link opens. Only the customer who placed the order can see it.
+        [Authorize]
+        public async Task<IActionResult> ConfirmOrderAndPayment(int orderId)
         {
-            /*
-             * Code Attribution
-             * SmtpClient Class (System.Net.Mail)
-             * karelz
-             * learn.microsoft.com
-             * https://learn.microsoft.com/en-us/dotnet/api/system.net.mail.smtpclient?view=net-7.0
-             */
-            try
-            {
-                var smtpClient = new SmtpClient("smtp.gmail.com")
-                {
-                    Port = 587,
-                    Credentials = new System.Net.NetworkCredential("smtp-user@example.com", "CHANGE_ME"),
-                    EnableSsl = true,
-                };
-
-                /*
-                 * Code Attribution
-                 * IUrlHelper.Action(UrlActionContext) Method (Microsoft.AspNetCore.Mvc)
-                 * dotnet-bot
-                 * learn.microsoft.com
-                 * https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.iurlhelper.action?view=aspnetcore-7.0
-                 */
-                var confirmationLink = Url.Action("ConfirmOrderAndPayment", "MyWork", new { orderId }, Request.Scheme);
-
-                var mailMessage = new MailMessage
-                {
-                    From = new MailAddress("noreply@example.com"),
-                    Subject = "Confirm your order and payment",
-                    Body = $@"
-                        <h1>Thank you for your order!</h1>
-                        <p>Please confirm your order and payment by clicking the link below:</p>
-                        <a href='{confirmationLink}'>Confirm Order and Payment</a>",
-                    IsBodyHtml = true,
-                };
-                mailMessage.To.Add(toEmail);
-
-                await smtpClient.SendMailAsync(mailMessage);
-
-                return Ok("Email sent successfully.");
-            }
-            catch (Exception ex)
-            {
-                return BadRequest($"Error sending email: {ex.Message}");
-            }
-        }
-
-        // Confirms the order and payment
-        public IActionResult ConfirmOrderAndPayment(int orderId)
-        {
-            var order = GetOrderById(orderId);
+            var order = await FindOwnOrderAsync(orderId);
             if (order == null)
             {
                 return NotFound();
@@ -156,40 +96,55 @@ namespace CraftMarket.Controllers
             return View(order);
         }
 
-        // Confirms the order via external API
+        // Starts the order-processing orchestration in the Functions app.
         [HttpPost]
-        public async Task<IActionResult> ConfirmOrder(int orderId)
-        {
-            var client = _clientFactory.CreateClient();
-            var response = await client.PostAsync($"{_functionAppBaseUrl}/api/ConfirmOrder?orderId={orderId}", null);
+        [Authorize]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> ConfirmOrder(int orderId) =>
+            ForwardToFunctionAsync(orderId, "ConfirmOrder");
 
-            if (response.IsSuccessStatusCode)
+        // Tells the running orchestration that payment has been made.
+        [HttpPost]
+        [Authorize]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> ConfirmPayment(int orderId) =>
+            ForwardToFunctionAsync(orderId, "ConfirmPayment");
+
+        private async Task<IActionResult> ForwardToFunctionAsync(int orderId, string functionName)
+        {
+            if (await FindOwnOrderAsync(orderId) == null)
             {
-                return Ok("Order confirmed.");
+                return NotFound();
             }
-            return BadRequest("Failed to confirm order.");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_functionAppBaseUrl}/api/{functionName}?orderId={orderId}");
+            if (!string.IsNullOrEmpty(_functionAppKey))
+            {
+                request.Headers.Add("x-functions-key", _functionAppKey);
+            }
+
+            try
+            {
+                var response = await _clientFactory.CreateClient().SendAsync(request);
+                TempData["Message"] = await response.Content.ReadAsStringAsync();
+                TempData["MessageIsError"] = !response.IsSuccessStatusCode;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "Calling {Function} failed.", functionName);
+                TempData["Message"] = "The order processing service is not reachable. Please try again later.";
+                TempData["MessageIsError"] = true;
+            }
+
+            return RedirectToAction(nameof(ConfirmOrderAndPayment), new { orderId });
         }
 
-        // Confirms the payment via external API
-        [HttpPost]
-        public async Task<IActionResult> ConfirmPayment(int orderId)
+        private async Task<Order?> FindOwnOrderAsync(int orderId)
         {
-            var client = _clientFactory.CreateClient();
-            var response = await client.PostAsync($"{_functionAppBaseUrl}/api/ConfirmPayment?orderId={orderId}", null);
-
-            if (response.IsSuccessStatusCode)
-            {
-                return Ok("Payment confirmed.");
-            }
-            return BadRequest("Failed to confirm payment.");
-        }
-
-        // Retrieves an order by its ID
-        private Order? GetOrderById(int orderId)
-        {
-            return _context.Orders
+            var userId = _userManager.GetUserId(User);
+            return await _context.Orders
                 .Include(o => o.Product)
-                .FirstOrDefault(o => o.OrderId == orderId);
+                .FirstOrDefaultAsync(o => o.OrderId == orderId && o.UserId == userId);
         }
     }
 }

@@ -1,7 +1,16 @@
-﻿@{
+@{
     ViewData["Title"] = "Order Confirmation";
+    var confirmationLink = ViewBag.ConfirmationLink as string;
 }
 
 <h1 class="display-4">@ViewData["Title"]</h1>
 
-<p>Your order has been placed successfully. Please check your email to confirm the order and make payment.</p>
+@if (confirmationLink == null)
+{
+    <p>Your order has been placed. Please check your email to confirm the order and make payment.</p>
+}
+else
+{
+    <p>Your order has been placed. Email is not configured on this server, so open the confirmation page directly:</p>
+    <p><a href="@confirmationLink">Confirm order and payment</a></p>
+}

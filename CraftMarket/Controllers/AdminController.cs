@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using CraftMarket.Data;
 using CraftMarket.Models;
 using System.Collections.Generic;
 using System.Threading.Tasks;

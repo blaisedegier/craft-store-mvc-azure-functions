@@ -1,22 +1,38 @@
-﻿@model CraftMarket.Models.Order
+@model CraftMarket.Models.Order
 
 @{
     ViewData["Title"] = "Confirm Order and Payment";
+    var message = TempData["Message"] as string;
+    var messageIsError = TempData["MessageIsError"] as bool? ?? false;
 }
 
 <h1>@ViewData["Title"]</h1>
 
-<div>
-    <h2>Order Details</h2>
-    <p>Order ID: @Model.OrderId</p>
-    <p>Product ID: @Model.ProductId</p>
-    <p>User ID: @Model.UserId</p>
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(messageIsError ? "alert-danger" : "alert-info")">@message</div>
+}
 
-    <form method="post" asp-action="ConfirmOrder" asp-route-orderId="@Model.OrderId">
+<div>
+    <h2>Order details</h2>
+    <dl class="row">
+        <dt class="col-sm-3">Order ID</dt>
+        <dd class="col-sm-9">@Model.OrderId</dd>
+        <dt class="col-sm-3">Product</dt>
+        <dd class="col-sm-9">@Model.Product?.Name</dd>
+        <dt class="col-sm-3">Order status</dt>
+        <dd class="col-sm-9">@Model.OrderStatus</dd>
+        <dt class="col-sm-3">Payment status</dt>
+        <dd class="col-sm-9">@Model.PaymentStatus</dd>
+    </dl>
+
+    <p class="text-muted">The Functions app updates these statuses in the background; refresh the page to see the latest.</p>
+
+    <form method="post" asp-action="ConfirmOrder" asp-route-orderId="@Model.OrderId" class="d-inline">
         <button type="submit" class="btn btn-success">Confirm Order</button>
     </form>
 
-    <form method="post" asp-action="ConfirmPayment" asp-route-orderId="@Model.OrderId">
+    <form method="post" asp-action="ConfirmPayment" asp-route-orderId="@Model.OrderId" class="d-inline">
         <button type="submit" class="btn btn-primary">Confirm Payment</button>
     </form>
 </div>
