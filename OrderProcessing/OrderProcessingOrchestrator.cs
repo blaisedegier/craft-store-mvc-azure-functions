@@ -8,7 +8,7 @@ namespace OrderProcessing
 {
     // One orchestration per order, started by ConfirmOrder. It marks the order confirmed, then waits up to
     // 24 hours for the PaymentConfirmed event raised by ConfirmPayment. Payment in time completes the
-    // order; otherwise the order expires. Every database write happens in the UpdateOrderStatus activity,
+    // order and confirms the payment; otherwise both the order and its payment are marked Expired. Every database write happens in the UpdateOrderStatus activity,
     // because orchestrator code is replayed and must not perform I/O itself.
     // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.functions.worker?view=azure-dotnet
     public static class OrderProcessingOrchestrator
@@ -50,7 +50,7 @@ namespace OrderProcessing
             }
 
             await context.CallActivityAsync(nameof(OrderStatusActivity.UpdateOrderStatus),
-                new OrderStatusUpdate(orderId, OrderStatuses.Expired, null));
+                new OrderStatusUpdate(orderId, OrderStatuses.Expired, OrderStatuses.Expired));
             context.SetCustomStatus(OrderStatuses.Expired);
             logger.LogInformation("Order {OrderId} expired without payment.", orderId);
             return OrderStatuses.Expired;

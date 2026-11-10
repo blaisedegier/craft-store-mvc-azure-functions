@@ -10,8 +10,8 @@ An ASP.NET Core 10 MVC store for handcrafted goods whose order confirmation and 
 - Lets a registered user (ASP.NET Core Identity) order a product. The order starts as `Pending` and the
   user is emailed a link to a page where they confirm the order and then the payment.
 - Confirming the order starts a workflow in the Functions app that marks the order `Confirmed` and waits up
-  to 24 hours for payment. Confirming payment in that window marks the order `Completed`; otherwise it
-  becomes `Expired`.
+  to 24 hours for payment. Confirming payment in that window marks the order `Completed`; otherwise the
+  order and its payment both become `Expired`.
 - Gives users in the `Admin` role an Orders page listing every order with its product, customer and
   statuses.
 - Includes About and Contact pages.
@@ -34,7 +34,7 @@ browser -> CraftMarket: Confirm Order     -> POST /api/ConfirmOrder?orderId=N
 browser -> CraftMarket: Confirm Payment   -> POST /api/ConfirmPayment?orderId=N
                                              raises PaymentConfirmed on "order-N"
                                                activity: OrderStatus = Completed, PaymentStatus = Confirmed
-                         (timer fires first)   activity: OrderStatus = Expired
+                         (timer fires first)   activity: OrderStatus = Expired, PaymentStatus = Expired
 ```
 
 Decisions worth knowing about:
@@ -57,8 +57,15 @@ Decisions worth knowing about:
 - **Users can only see and act on their own orders.** The confirmation page and both confirm actions require
   sign-in and look the order up by id and the signed-in user's id together.
 
-`Order` has `OrderId`, `ProductId`, `UserId`, `OrderStatus` (`Pending`, `Confirmed`, `Completed`, `Expired`)
-and `PaymentStatus` (`Pending`, `Confirmed`).
+`Order` has `OrderId`, `ProductId`, `UserId`, `OrderStatus` and `PaymentStatus`. The two statuses move
+together through these states, and nothing else writes them:
+
+| When | Written by | `OrderStatus` | `PaymentStatus` |
+| --- | --- | --- | --- |
+| Order placed | Web app | `Pending` | `Pending` |
+| Order confirmed | Orchestration | `Confirmed` | `Pending` |
+| Payment confirmed within 24 hours | Orchestration | `Completed` | `Confirmed` |
+| No payment within 24 hours | Orchestration | `Expired` | `Expired` |
 
 ## Running it
 
