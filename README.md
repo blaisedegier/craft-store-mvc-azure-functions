@@ -43,7 +43,10 @@ Decisions worth knowing about:
   `DurableTaskClient` and `ConfirmPayment` raises an event on it. Every status change happens in the
   `UpdateOrderStatus` activity, because orchestrator code is replayed and must not do I/O. Each order gets a
   predictable instance id (`order-<id>`), so `ConfirmPayment` can find the running workflow from the order id
-  alone, and a second `ConfirmOrder` for the same order is refused.
+  alone, and a second `ConfirmOrder` for the same order is refused with 409. That holds even when two arrive
+  at once and both pass the existence check: `host.json` sets `overridableExistingInstanceStates` to
+  `NonRunningStates`, so the host will not start a second instance under a running instance's id, and
+  `ConfirmOrder` turns that error into the same 409.
 - **The Functions app does not reference the web project.** It maps only the three columns it touches
   (`OrderID`, `OrderStatus`, `PaymentStatus`) of the `Orders` table in its own small `OrdersContext`. The web
   app owns the schema through EF Core migrations.

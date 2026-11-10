@@ -1,4 +1,6 @@
 using System.Net;
+using DurableTask.Core.Exceptions;
+using Grpc.Core;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.DurableTask;
@@ -42,8 +44,16 @@ namespace OrderProcessing
                 return await TextAsync(req, HttpStatusCode.Conflict, "This order has already been confirmed.");
             }
 
-            await client.ScheduleNewOrchestrationInstanceAsync(
-                nameof(OrderProcessingOrchestrator), orderId, new StartOrchestrationOptions(instanceId));
+            try
+            {
+                await client.ScheduleNewOrchestrationInstanceAsync(
+                    nameof(OrderProcessingOrchestrator), orderId, new StartOrchestrationOptions(instanceId));
+            }
+            catch (Exception ex) when (IsAlreadyExists(ex))
+            {
+                // Two requests for the same order can both pass the check above; the host starts only one.
+                return await TextAsync(req, HttpStatusCode.Conflict, "This order has already been confirmed.");
+            }
 
             return await TextAsync(req, HttpStatusCode.Accepted, "Order confirmed. Please confirm payment within 24 hours.");
         }
@@ -73,6 +83,13 @@ namespace OrderProcessing
             await client.RaiseEventAsync(instanceId, OrderProcessingOrchestrator.PaymentConfirmedEvent, true);
             return await TextAsync(req, HttpStatusCode.Accepted, "Payment confirmed.");
         }
+
+        // The host refuses to start an instance id that is already running (host.json sets
+        // overridableExistingInstanceStates to NonRunningStates). The gRPC client normally reports that as
+        // OrchestrationAlreadyExistsException; the RpcException check covers the status arriving unwrapped.
+        private static bool IsAlreadyExists(Exception ex) =>
+            ex is OrchestrationAlreadyExistsException
+            || ex is RpcException { StatusCode: StatusCode.AlreadyExists };
 
         // Adapted from https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.functions.worker.http.httprequestdata?view=azure-dotnet
         private static bool TryGetOrderId(HttpRequestData req, out int orderId)
