@@ -24,19 +24,19 @@ The solution is composed of two projects that work together:
 
 | Project             | Type                                 | Responsibility                                                                                                       |
 | ------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **ServerlessFunc**  | ASP.NET Core MVC Web App             | Product catalog, user authentication (Identity), order placement, email notifications, admin dashboard               |
+| **CraftMarket**  | ASP.NET Core MVC Web App             | Product catalog, user authentication (Identity), order placement, email notifications, admin dashboard               |
 | **OrderProcessing** | Azure Functions v4 (Isolated Worker) | Serverless HTTP APIs for order/payment confirmation, Durable Functions orchestrator for long-running order workflows |
 
 **Flow:**
 
 ```text
-Browser ──► ServerlessFunc (MVC) ──► Places order & sends confirmation email
+Browser ──► CraftMarket (MVC) ──► Places order & sends confirmation email
                 │
                 ▼
          User clicks link
                 │
                 ▼
-         ServerlessFunc calls ──► OrderProcessing (Azure Functions)
+         CraftMarket calls ──► OrderProcessing (Azure Functions)
                               ├── ConfirmOrder
                               ├── ConfirmPayment
                               └── OrderProcessingOrchestrator (Durable)
@@ -67,10 +67,10 @@ Browser ──► ServerlessFunc (MVC) ──► Places order & sends confirmati
 ## Project Structure
 
 ```text
-EF-ServerlessFunc/
-├── ServerlessFunc.sln                 # Visual Studio solution
+EF-CraftMarket/
+├── CraftMarket.sln                 # Visual Studio solution
 │
-├── ServerlessFunc/                    # ASP.NET Core MVC Web Application
+├── CraftMarket/                    # ASP.NET Core MVC Web Application
 │   ├── Program.cs                     # App startup, DI, Identity, seed data
 │   ├── Controllers/
 │   │   ├── HomeController.cs          # Landing page & product listing
@@ -115,12 +115,12 @@ EF-ServerlessFunc/
 
 ```bash
 git clone <repository-url>
-cd EF-ServerlessFunc
+cd EF-CraftMarket
 ```
 
 ### 2. Configure the web app
 
-Update connection strings and the Functions base URL in `ServerlessFunc/appsettings.json` (or preferably use [User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets)):
+Update connection strings and the Functions base URL in `CraftMarket/appsettings.json` (or preferably use [User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets)):
 
 ```json
 {
@@ -150,7 +150,7 @@ Create `OrderProcessing/local.settings.json` (this file is gitignored):
 ### 4. Apply database migrations
 
 ```bash
-cd ServerlessFunc
+cd CraftMarket
 dotnet ef database update --context ApplicationDbContext
 dotnet ef database update --context CraftMarketContext
 ```
@@ -162,7 +162,7 @@ On first run the application also seeds initial **categories** and **products** 
 **Terminal 1 - Web App:**
 
 ```bash
-cd ServerlessFunc
+cd CraftMarket
 dotnet run
 ```
 
@@ -191,7 +191,7 @@ On first startup the app creates a default admin user:
 
 ## Configuration
 
-### Web App (`ServerlessFunc`)
+### Web App (`CraftMarket`)
 
 | Setting                               | Location                          | Description                                        |
 | ------------------------------------- | --------------------------------- | -------------------------------------------------- |
@@ -216,8 +216,8 @@ The application uses **two EF Core contexts** against the same SQL Server databa
 
 | Context                | Purpose                                          | Migrations Path                   |
 | ---------------------- | ------------------------------------------------ | --------------------------------- |
-| `ApplicationDbContext` | ASP.NET Core Identity (users, roles, claims)     | `ServerlessFunc/Data/Migrations/` |
-| `CraftMarketContext`  | Business entities (Products, Categories, Orders) | `ServerlessFunc/Migrations/`      |
+| `ApplicationDbContext` | ASP.NET Core Identity (users, roles, claims)     | `CraftMarket/Data/Migrations/` |
+| `CraftMarketContext`  | Business entities (Products, Categories, Orders) | `CraftMarket/Migrations/`      |
 
 ### Key entities
 
@@ -229,7 +229,7 @@ Order (OrderStatus, PaymentStatus, OrderDate, UserEmail, ProductId)
 ### Adding a new migration
 
 ```bash
-cd ServerlessFunc
+cd CraftMarket
 dotnet ef migrations add <MigrationName> --context CraftMarketContext
 dotnet ef database update --context CraftMarketContext
 ```
@@ -305,14 +305,14 @@ The `OrderProcessingOrchestrator` implements a long-running workflow using Azure
 
 Both projects include Visual Studio **Azure publish profiles** for deployment:
 
-- **ServerlessFunc** → Azure Web App
+- **CraftMarket** → Azure Web App
 - **OrderProcessing** → Azure Function App
 
 ### Manual deployment
 
 ```bash
 # Publish the web app
-cd ServerlessFunc
+cd CraftMarket
 dotnet publish -c Release -o ./publish
 
 # Publish the Functions app
