@@ -139,3 +139,7 @@ Durable Functions, Bootstrap 5.
 - Products and categories come only from the seed data; there are no screens to manage them.
 - Prices are whole rand amounts.
 - There are no automated tests.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
