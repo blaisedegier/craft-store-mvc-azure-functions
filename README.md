@@ -1,331 +1,121 @@
-# CraftMarket - Serverless Order Processing 🛒
+# CraftMarket
 
-A full-stack e-commerce application for handcrafted products, built with **ASP.NET Core MVC** and **Azure Functions (Durable)**. Customers browse a product catalog, place orders, and confirm them through a serverless order-processing pipeline backed by Entity Framework Core and SQL Server.
+An ASP.NET Core 8 MVC store for handcrafted goods whose order confirmation and payment steps run as a Durable Functions orchestration in an Azure Functions app.
 
----
+[![CI](https://github.com/blaisedegier/craft-store-mvc-azure-functions/actions/workflows/ci.yml/badge.svg)](https://github.com/blaisedegier/craft-store-mvc-azure-functions/actions/workflows/ci.yml)
 
-## Table of Contents
+## What it does
 
-- [Architecture Overview](#architecture-overview)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [Database & Migrations](#database--migrations)
-- [API Reference](#api-reference)
-- [Deployment](#deployment)
+- Shows a catalogue of handcrafted products by category, seeded on first run.
+- Lets a registered user (ASP.NET Core Identity) order a product. The order starts as `Pending` and the
+  user is emailed a link to a page where they confirm the order and then the payment.
+- Confirming the order starts a workflow in the Functions app that marks the order `Confirmed` and waits up
+  to 24 hours for payment. Confirming payment in that window marks the order `Completed`; otherwise it
+  becomes `Expired`.
+- Gives users in the `Admin` role an Orders page listing every order with its product, customer and
+  statuses.
+- Includes About and Contact pages.
 
----
+## How it works
 
-## Architecture Overview
+The solution has two projects that share one SQL Server database:
 
-The solution is composed of two projects that work together:
-
-| Project             | Type                                 | Responsibility                                                                                                       |
-| ------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **CraftMarket**  | ASP.NET Core MVC Web App             | Product catalog, user authentication (Identity), order placement, email notifications, admin dashboard               |
-| **OrderProcessing** | Azure Functions v4 (Isolated Worker) | Serverless HTTP APIs for order/payment confirmation, Durable Functions orchestrator for long-running order workflows |
-
-**Flow:**
+| Project | Type | Role |
+| --- | --- | --- |
+| `CraftMarket` | ASP.NET Core 8 MVC | Catalogue, Identity, ordering, the confirmation page, admin orders list |
+| `OrderProcessing` | Azure Functions v4, .NET 8 isolated worker | `ConfirmOrder` and `ConfirmPayment` HTTP functions, the order orchestrator and its activity |
 
 ```text
-Browser ──► CraftMarket (MVC) ──► Places order & sends confirmation email
-                │
-                ▼
-         User clicks link
-                │
-                ▼
-         CraftMarket calls ──► OrderProcessing (Azure Functions)
-                              ├── ConfirmOrder
-                              ├── ConfirmPayment
-                              └── OrderProcessingOrchestrator (Durable)
-                                       │
-                                       ▼
-                                   SQL Server (EF Core)
+browser -> CraftMarket: place order       -> Orders row (Pending, Pending) + email with confirmation link
+browser -> CraftMarket: Confirm Order     -> POST /api/ConfirmOrder?orderId=N
+                                             starts orchestration "order-N"
+                                               activity: OrderStatus = Confirmed
+                                               wait for PaymentConfirmed event, or a 24 hour timer
+browser -> CraftMarket: Confirm Payment   -> POST /api/ConfirmPayment?orderId=N
+                                             raises PaymentConfirmed on "order-N"
+                                               activity: OrderStatus = Completed, PaymentStatus = Confirmed
+                         (timer fires first)   activity: OrderStatus = Expired
 ```
 
----
+Decisions worth knowing about:
 
-## Tech Stack
+- **The HTTP functions never write to the database.** `ConfirmOrder` schedules the orchestration through
+  `DurableTaskClient` and `ConfirmPayment` raises an event on it. Every status change happens in the
+  `UpdateOrderStatus` activity, because orchestrator code is replayed and must not do I/O. Each order gets a
+  predictable instance id (`order-<id>`), so `ConfirmPayment` can find the running workflow from the order id
+  alone, and a second `ConfirmOrder` for the same order is refused.
+- **The Functions app does not reference the web project.** It maps only the three columns it touches
+  (`OrderID`, `OrderStatus`, `PaymentStatus`) of the `Orders` table in its own small `OrdersContext`. The web
+  app owns the schema through EF Core migrations.
+- **One `DbContext` in the web app.** `CraftMarketContext` derives from `IdentityDbContext`, so the Identity
+  tables and the store tables (`Category`, `Product`, `Orders`) come from one migration history, and an
+  order's `UserId` is a foreign key to `AspNetUsers`. Pending migrations are applied at startup before the
+  catalogue is seeded.
+- **Users can only see and act on their own orders.** The confirmation page and both confirm actions require
+  sign-in and look the order up by id and the signed-in user's id together.
 
-| Layer              | Technology                        | Version  |
-| ------------------ | --------------------------------- | -------- |
-| **Runtime**        | .NET                              | 8.0      |
-| **Web Framework**  | ASP.NET Core MVC                  | 8.0      |
-| **Authentication** | ASP.NET Core Identity             | 8.0.6    |
-| **Serverless**     | Azure Functions (Isolated Worker) | v4       |
-| **Orchestration**  | Durable Functions                 | 1.1.4    |
-| **ORM**            | Entity Framework Core             | 8.0.6    |
-| **Database**       | SQL Server                        | —        |
-| **Monitoring**     | Application Insights              | 2.22.0   |
-| **Front-end**      | Bootstrap 5, jQuery               | Vendored |
-| **Serialization**  | Newtonsoft.Json                   | 13.0.3   |
+`Order` has `OrderId`, `ProductId`, `UserId`, `OrderStatus` (`Pending`, `Confirmed`, `Completed`, `Expired`)
+and `PaymentStatus` (`Pending`, `Confirmed`).
 
----
+## Running it
 
-## Project Structure
+Prerequisites:
 
-```text
-EF-CraftMarket/
-├── CraftMarket.sln                 # Visual Studio solution
-│
-├── CraftMarket/                    # ASP.NET Core MVC Web Application
-│   ├── Program.cs                     # App startup, DI, Identity, seed data
-│   ├── Controllers/
-│   │   ├── HomeController.cs          # Landing page & product listing
-│   │   ├── MyWorkController.cs        # Catalog browsing, order placement, email & confirmation
-│   │   ├── AdminController.cs         # Admin-only order management
-│   │   ├── AboutUsController.cs       # Static about page
-│   │   └── ContactUsController.cs     # Contact form
-│   ├── Models/
-│   │   ├── CraftMarketContext.cs      # EF Core DbContext (business entities)
-│   │   ├── Product.cs                 # Product entity
-│   │   ├── Category.cs               # Category entity
-│   │   ├── Order.cs                   # Order entity (status tracking)
-│   │   └── SeedData.cs               # Initial categories & products
-│   ├── Data/
-│   │   ├── ApplicationDbContext.cs    # Identity DbContext
-│   │   └── Migrations/               # Identity schema migrations
-│   ├── Migrations/                    # Business entity migrations
-│   ├── Views/                         # Razor views & layouts
-│   └── wwwroot/                       # Static assets (CSS, JS, vendor libs)
-│
-└── OrderProcessing/                   # Azure Functions v4 (Isolated Worker)
-    ├── Program.cs                     # Functions host configuration
-    ├── OrderConfirmationFunction.cs   # HTTP POST — confirm an order
-    ├── PaymentProcessingFunction.cs   # HTTP POST — confirm a payment
-    └── OrderProcessingOrchestrator.cs # Durable orchestrator for order workflows
-```
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- SQL Server. The default connection string uses LocalDB, `(localdb)\MSSQLLocalDB`, which is installed with
+  Visual Studio on Windows; set `ConnectionStrings:DefaultConnection` to use any other server.
+- For the order workflow: [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+  and [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite), which Durable Functions
+  uses for its state when `AzureWebJobsStorage` is `UseDevelopmentStorage=true`.
 
----
-
-## Prerequisites
-
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [SQL Server](https://www.microsoft.com/sql-server) (local, Docker, or Azure SQL)
-- [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local) (for local Functions development)
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) or [VS Code](https://code.visualstudio.com/) with the C# extension
-
----
-
-## Getting Started
-
-### 1. Clone the repository
+### Web app
 
 ```bash
-git clone <repository-url>
-cd EF-CraftMarket
+git clone https://github.com/blaisedegier/craft-store-mvc-azure-functions.git
+cd craft-store-mvc-azure-functions
+dotnet build CraftMarket.sln -c Release
+dotnet user-secrets set "SeedAdmin:Password" "Choose-a-Passw0rd!" --project CraftMarket
+dotnet run --project CraftMarket/CraftMarket.csproj
 ```
 
-### 2. Configure the web app
+The app listens on <http://localhost:5063>. On first start it creates the `CraftMarket` database, seeds the
+catalogue and the `Admin` and `User` roles, and creates `admin@example.com` (change `SeedAdmin:Email` to use
+another address) with the password you set. Without `SeedAdmin:Password` no admin account is created.
 
-Update connection strings and the Functions base URL in `CraftMarket/appsettings.json` (or preferably use [User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets)):
+Settings in `CraftMarket/appsettings.json`; keep anything secret in user secrets or environment variables:
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=<your-server>;Database=CraftMarket;Trusted_Connection=True;TrustServerCertificate=True;"
-  },
-  "FunctionAppBaseUrl": "http://localhost:7235"
-}
-```
+| Setting | Purpose |
+| --- | --- |
+| `ConnectionStrings:DefaultConnection` | SQL Server database (LocalDB by default) |
+| `Smtp:Host`, `Smtp:Port`, `Smtp:EnableSsl`, `Smtp:Username`, `Smtp:Password`, `Smtp:From` | Mail server for the confirmation email. When `Smtp:Host` is empty no email is sent and the confirmation link is shown on the order page instead. |
+| `SeedAdmin:Email`, `SeedAdmin:Password` | Admin account created at startup |
+| `FunctionAppBaseUrl` | Base URL of the Functions app (`http://localhost:7235` locally) |
+| `FunctionAppKey` | Function key sent as `x-functions-key`; leave empty locally, where keys are not checked |
 
-### 3. Configure the Functions app
-
-Create `OrderProcessing/local.settings.json` (this file is gitignored):
-
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "SqlConnectionString": "Server=<your-server>;Database=CraftMarket;Trusted_Connection=True;TrustServerCertificate=True;",
-    "FunctionAppBaseUrl": "http://localhost:7235"
-  }
-}
-```
-
-### 4. Apply database migrations
+### Functions app
 
 ```bash
-cd CraftMarket
-dotnet ef database update --context ApplicationDbContext
-dotnet ef database update --context CraftMarketContext
-```
-
-On first run the application also seeds initial **categories** and **products** automatically.
-
-### 5. Run both projects
-
-**Terminal 1 - Web App:**
-
-```bash
-cd CraftMarket
-dotnet run
-```
-
-The MVC app starts at `https://localhost:7275` (or `http://localhost:5063`).
-
-**Terminal 2 - Azure Functions:**
-
-```bash
+cp OrderProcessing/local.settings.json.example OrderProcessing/local.settings.json
+azurite --silent --location .azurite        # in a separate terminal
 cd OrderProcessing
-func start --port 7235
+func start
 ```
 
-The Functions app starts at `http://localhost:7235`.
+`local.settings.json` is gitignored. It points `SqlConnectionString` at the same LocalDB database as the web
+app and sets the local port to 7235, which is where the web app's `FunctionAppBaseUrl` points. Start the web
+app first so the database exists.
 
-### 6. Default admin account
+## Tech
 
-On first startup the app creates a default admin user:
+ASP.NET Core 8 MVC, ASP.NET Core Identity, EF Core 8 with SQL Server, Azure Functions v4 (isolated worker),
+Durable Functions, Bootstrap 5.
 
-| Field        | Value                          |
-| ------------ | ------------------------------ |
-| **Role**     | Admin                          |
-| **Email**    | _(configured in `Program.cs`)_ |
-| **Password** | _(configured in `Program.cs`)_ |
+## Known limitations
 
----
-
-## Configuration
-
-### Web App (`CraftMarket`)
-
-| Setting                               | Location                          | Description                                        |
-| ------------------------------------- | --------------------------------- | -------------------------------------------------- |
-| `ConnectionStrings:DefaultConnection` | `appsettings.json` / User Secrets | SQL Server connection string                       |
-| `FunctionAppBaseUrl`                  | `appsettings.json`                | Base URL of the Azure Functions app                |
-| `ASPNETCORE_ENVIRONMENT`              | `launchSettings.json` / env var   | Runtime environment (`Development` / `Production`) |
-
-### Azure Functions (`OrderProcessing`)
-
-| Setting                                 | Location                             | Description                                                         |
-| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| `SqlConnectionString`                   | `local.settings.json` / App Settings | SQL Server connection string (same database as web app)             |
-| `FunctionAppBaseUrl`                    | `local.settings.json` / App Settings | Self-referencing base URL (used by orchestrator)                    |
-| `AzureWebJobsStorage`                   | `local.settings.json` / App Settings | Azure Storage connection (use `UseDevelopmentStorage=true` locally) |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | App Settings                         | Application Insights telemetry (optional locally)                   |
-
----
-
-## Database & Migrations
-
-The application uses **two EF Core contexts** against the same SQL Server database:
-
-| Context                | Purpose                                          | Migrations Path                   |
-| ---------------------- | ------------------------------------------------ | --------------------------------- |
-| `ApplicationDbContext` | ASP.NET Core Identity (users, roles, claims)     | `CraftMarket/Data/Migrations/` |
-| `CraftMarketContext`  | Business entities (Products, Categories, Orders) | `CraftMarket/Migrations/`      |
-
-### Key entities
-
-```text
-Category ──1:N──► Product
-Order (OrderStatus, PaymentStatus, OrderDate, UserEmail, ProductId)
-```
-
-### Adding a new migration
-
-```bash
-cd CraftMarket
-dotnet ef migrations add <MigrationName> --context CraftMarketContext
-dotnet ef database update --context CraftMarketContext
-```
-
----
-
-## API Reference
-
-### Azure Functions HTTP Endpoints
-
-All endpoints use **anonymous** authentication.
-
-#### Confirm Order
-
-```bash
-POST /api/ConfirmOrder?orderId={id}
-```
-
-Sets the `OrderStatus` of the specified order to **Confirmed**.
-
-| Parameter | Type  | In    | Required |
-| --------- | ----- | ----- | -------- |
-| `orderId` | `int` | Query | Yes      |
-
-**Response:** `200 OK` with confirmation message, or `404 Not Found`.
-
----
-
-#### Confirm Payment
-
-```bash
-POST /api/ConfirmPayment?orderId={id}
-```
-
-Sets the `PaymentStatus` of the specified order to **Confirmed**.
-
-| Parameter | Type  | In    | Required |
-| --------- | ----- | ----- | -------- |
-| `orderId` | `int` | Query | Yes      |
-
-**Response:** `200 OK` with confirmation message, or `404 Not Found`.
-
----
-
-#### Durable Orchestrator
-
-The `OrderProcessingOrchestrator` implements a long-running workflow using Azure Durable Functions:
-
-1. Waits for an **OrderConfirmed** external event (24-hour timeout)
-2. Waits for a **PaymentConfirmed** external event (24-hour timeout)
-3. Calls `UpdateOrderStatus` to finalize the order
-
-> **Note:** The orchestrator is partially implemented — external event triggers and the `UpdateOrderStatus` endpoint are not yet wired up.
-
----
-
-### MVC Routes
-
-| Route                            | Auth          | Description                                    |
-| -------------------------------- | ------------- | ---------------------------------------------- |
-| `/`                              | Public        | Home page with product listing                 |
-| `/MyWork`                        | Public        | Full product catalog                           |
-| `/MyWork/OrderProduct`           | Authenticated | Place an order                                 |
-| `/MyWork/ConfirmOrderAndPayment` | Authenticated | Confirm order via Functions API                |
-| `/Admin`                         | Admin role    | Order management dashboard                     |
-| `/AboutUs`                       | Public        | About page                                     |
-| `/ContactUs`                     | Public        | Contact form                                   |
-| `/Identity/*`                    | —             | ASP.NET Identity pages (login, register, etc.) |
-
----
-
-## Deployment
-
-Both projects include Visual Studio **Azure publish profiles** for deployment:
-
-- **CraftMarket** → Azure Web App
-- **OrderProcessing** → Azure Function App
-
-### Manual deployment
-
-```bash
-# Publish the web app
-cd CraftMarket
-dotnet publish -c Release -o ./publish
-
-# Publish the Functions app
-cd ../OrderProcessing
-dotnet publish -c Release -o ./publish
-```
-
-Deploy the published output to your Azure resources via the Azure CLI, Visual Studio, or your preferred CI/CD pipeline.
-
-### Azure resource requirements
-
-- **App Service** (or App Service Plan) for the MVC web app
-- **Function App** (Consumption or Premium plan) with .NET 8 isolated worker
-- **Azure SQL Database**
-- **Storage Account** (required by Azure Functions)
-- **Application Insights** (recommended)
+- There is no payment provider: **Confirm Payment** records that payment was made without taking one.
+- Order statuses change in the background, so the confirmation page shows the new status after a refresh.
+- An order that has expired cannot be confirmed again; place a new order instead.
+- The contact form validates its input but does not store or send the message.
+- Products and categories come only from the seed data; there are no screens to manage them.
+- Prices are whole rand amounts.
+- There are no automated tests.

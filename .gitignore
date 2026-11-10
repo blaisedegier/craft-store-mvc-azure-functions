@@ -363,3 +363,9 @@ MigrationBackup/
 FodyWeavers.xsd
 # Azure Functions local settings (copy OrderProcessing/local.settings.json.example)
 local.settings.json
+
+# Azurite local storage emulator data
+.azurite/
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
